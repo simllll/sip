@@ -1,0 +1,62 @@
+name: Build and push to GHCR
+
+# Builds a patched livekit-sip image and pushes it to the GitHub Container
+# Registry under ghcr.io/simllll/sip. Intended as a stopgap until the fix
+# is accepted upstream (https://github.com/livekit/sip/pull/696).
+#
+# Consumers: reference the image as ghcr.io/simllll/sip:<tag> in their
+# deployment manifests. The tag matches the Git tag pushed here.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*-one100*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6
+        with:
+          images: ghcr.io/simllll/sip
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME:-dev}" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        with:
+          context: .
+          file: ./build/sip/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
